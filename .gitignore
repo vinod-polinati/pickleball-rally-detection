@@ -1,0 +1,18 @@
+# Virtual Environment
+env/
+
+# Output Folders
+rallies_v18/
+
+# Debug Files
+debug_v18.mp4
+
+# Input Videos
+input_match.mp4
+*.mp4
+
+# YOLO Models
+yolov8x.pt
+*.pt
+
+.DS_Store
