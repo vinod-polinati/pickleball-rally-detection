@@ -5,30 +5,22 @@ import subprocess
 import sys
 from ultralytics import YOLO
 
-# ================= V18: THE GOLDILOCKS TUNE =================
 VIDEO_PATH = "input_match.mp4"   
 OUTPUT_DIR = "rallies_v18"
-DEBUG_MODE = False                # <--- Run TRUE first
+DEBUG_MODE = False                
 DEBUG_DURATION_LIMIT = 40        
 
-# 1. GAP TOLERANCE (The "Merger" Fix)
-# Lowered to 0.6s. If ball disappears for > 0.6s, FORCE NEW CLIP.
+
 GAP_TOLERANCE_SEC = 0.6          
 
-# 2. PHYSICS SENSITIVITY (The "Splitter" Fix)
-# Lowered to 300px. 
-# Smashes are ~100px. Cuts are ~800px. 
-# 300px is the safe middle ground.
+
 MAX_BALL_JUMP = 300.0            
 
-# 3. SHOE FILTER (Green Shoe Protection)
 FOOT_ZONE_RATIO = 0.45           
 
-# 4. CONFIG
 MIN_RALLY_DURATION = 1.0         
 CONF_THRESHOLD = 0.15            
 IMG_SIZE = 1280                  
-# ============================================================
 
 def get_ffmpeg_cmd(input_file, start, end, output_file):
     return [
@@ -79,7 +71,6 @@ def detect_rallies():
 
     ball_timeline = np.zeros(frames, dtype=int)
     
-    # We use a set to store frames where a HARD CUT happened
     forced_cut_frames = set()
 
     prev_center = None 
@@ -93,7 +84,6 @@ def detect_rallies():
         cut_reason = ""
         is_teleport = False
         
-        # --- INFERENCE ---
         results = model.predict(frame, conf=CONF_THRESHOLD, classes=[0, 32], imgsz=IMG_SIZE, verbose=False)
         ball_boxes = []
         person_boxes = []
@@ -103,7 +93,6 @@ def detect_rallies():
                 if cls == 0: person_boxes.append(box)
                 elif cls == 32: ball_boxes.append(box)
 
-        # --- PROCESS BALL ---
         valid_ball = False
         curr_center = None
 
@@ -112,7 +101,6 @@ def detect_rallies():
             w, h = x2 - x1, y2 - y1
             if w > 65 or h > 65: continue 
             
-            # Shoe Filter is the ONLY safety we need
             if is_shoe(box, person_boxes):
                 if DEBUG_MODE:
                     cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 165, 255), 2)
@@ -121,11 +109,9 @@ def detect_rallies():
 
             center = ((x1 + x2) / 2, (y1 + y2) / 2)
             
-            # --- PHYSICS ---
             if prev_center is not None:
                 _, speed = get_vector(prev_center, center)
                 
-                # SENSITIVE TELEPORT CHECK
                 if speed > MAX_BALL_JUMP:
                     is_teleport = True
                     cut_reason = f"TELEPORT ({int(speed)}px)"
@@ -139,7 +125,6 @@ def detect_rallies():
             
             if valid_ball or is_teleport: break 
 
-        # --- REGISTER ---
         if is_teleport:
             forced_cut_frames.add(frame_idx)
             prev_center = None 
@@ -174,7 +159,6 @@ def detect_rallies():
         print("\n🛑 Debug Saved. Check 'debug_v18.mp4'")
         return
 
-    # ================= SPLITTING =================
     print("\n\n📊 Slicing Timeline...")
     gap_frames = int(GAP_TOLERANCE_SEC * fps)
     
@@ -184,7 +168,6 @@ def detect_rallies():
     
     for i in range(len(ball_timeline)):
         
-        # 1. HARD CUT (Teleport)
         if i in forced_cut_frames:
             if in_rally:
                 in_rally = False
@@ -193,15 +176,12 @@ def detect_rallies():
                     rallies.append((start_f/fps, end_f/fps))
             continue 
 
-        # 2. NORMAL FLOW
         if ball_timeline[i] == 1:
             if not in_rally:
                 in_rally = True
                 start_f = i
         else:
             if in_rally:
-                # Look ahead for GAP_TOLERANCE
-                # If we hit a FORCED CUT or run out of ball detections, we stop.
                 stop_rally = True
                 look_ahead = min(i + gap_frames, len(ball_timeline))
                 
